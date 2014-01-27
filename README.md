@@ -15,7 +15,7 @@ you're shown a random string again and the same thing continues to happen as lon
 you wish to continue playing.
 
 On the other hand, brutal mode won't let you type another string unless you manage
-to type the current string with at least *98%* accuracy. As long as you fail to meet
+to type the current string with at least **98%** accuracy. If fail to meet
 that level of accuracy, you will be shown the same string as long as you continue playing.
 
 Needless to say, you can of course change the mode in the main menu but if you wish
@@ -65,12 +65,22 @@ Frankly, I don't know how to unit test a curses program. I would appreciate poin
 and add unit tests as I learn how. If this makes you feel better, I did spent
 countless hours in front of this program.
 
-#### What's up with the "You need to resize your terminal window!" message?
+#### What's up with the "RESIZE!" message?
 Well, the program will run without a hich if your current terminal window has a
-size of 25x80, which is the standard. Anything smaller is really crampy. I was thinking
+size of 24x80, which is the standard. Anything smaller is really crampy. I was thinking
 of having the program automatically resize the window but that has turned out to be
 a nightmarish experience. Kindly resize your terminal window and all will be well.
 Truly, this is not the size you're looking for.
+
+#### Why do I get back to the menu when I resize my terminal?
+If you try to resize the terminal window in the middle of a game, the program catches that event and
+throws you back to the menu. It is hard to repaint the window after a resize event while a game is
+going on, especially in the Force game. Instead of crashing, I decided that exiting the current game and
+returning to the menu is the better approach.
+
+If you have a suggestion about how to approach this, I would be more than glad to hear your thoughts.
+
+And in any case, why on Tattooine are you resizing your terminal while typing?!
 
 #### I have a suggestion! What should I do?
 Create an issue, shoot me an email, fork and submit a PR, I don't care how you get in touch
