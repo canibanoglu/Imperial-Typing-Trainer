@@ -19,9 +19,7 @@ class ImperialTrainer(object):
                     '1. Start a normal game',
                     '2. Start a Force game',
                     '3. Graphs',
-                    '4. Add Quotes',
-                    '(B)rutal Mode: %s' % ('On ' if self.brutal else 'Off'),
-                    '(M)ost Common Words: %s' % ('On ' if self.mostcommon else 'Off')]
+                    '4. Add Quotes',]
 
         x = (self.x - len(lines[1])) / 2
         self.screen.addstr(self.y / 2 - 3, (self.x - len(lines[0])) / 2, lines[0])
@@ -29,8 +27,31 @@ class ImperialTrainer(object):
         self.screen.addstr(self.y / 2, x, lines[2])
         self.screen.addstr(self.y / 2 + 1, x, lines[3])
         self.screen.addstr(self.y / 2 + 2, x, lines[4])
-        self.screen.addstr(self.y - 2,  2, lines[5])
-        self.screen.addstr(self.y - 2, self.x - len(lines[6]) - 2, lines[6])
+        self._paint_modes()
+
+    def _toggle_mode(self, mode):
+        """
+        Toggles the instance variables self.brutal and self.mostcommon
+        If the mode argument is 0, it means we want to toggle self.brutal
+        If the mode argument is 1, it means we want to toggle self.mostcommon
+        Any other values will result in the function returning without doing
+        anything.
+        """
+
+        if mode == 0:
+            self.brutal = (self.brutal + 1) % 2
+        elif mode == 1:
+            self.mostcommon = (self.mostcommon + 1) % 2
+        else:
+            return
+
+        self._paint_modes()
+
+    def _paint_modes(self):
+        brutal = '(B)rutal Mode: %s' % ('On ' if self.brutal else 'Off')
+        mcw = '(M)ost Common Words: %s' % ('On ' if self.mostcommon else 'Off')
+        self.screen.addstr(self.y - 2, 2, brutal)
+        self.screen.addstr(self.y - 2, self.x - len(mcw) - 2, mcw)
 
     def main(self):
         self._paint_menu()
@@ -55,23 +76,17 @@ class ImperialTrainer(object):
                     self.screen.clear()
                     self._paint_menu()
             elif q == ord('1'):
-                self._normal()
+                self.normal()
             elif q == ord('b') or q == ord('B'):
-                self.brutal = (self.brutal + 1) % 2
-                on_off = 'On ' if self.brutal else 'Off'
-                msg = '(B)rutal Mode: %s' % on_off
-                self.screen.addstr(self.y - 2, 2, msg)
+                self._toggle_mode(0)
             elif q == ord('m') or q == ord('M'):
-                self.mostcommon = (self.mostcommon + 1) % 2
-                on_off = 'On ' if self.mostcommon else 'Off'
-                msg = '(M)ost Common Words: %s' % on_off
-                self.screen.addstr(self.y - 2, self.x - len(msg) - 2, msg)
+                self._toggle_mode(1)
 
     def _split_quote(self, quote):
         length = 0
         parts = [[]]
         words = quote.split()
-        limit = 80 if self.x > 80 else self.x - 10
+        limit = 80 if self.x > 100 else self.x - 15
 
         for word in words:
             if length + len(word) > limit:
@@ -85,12 +100,24 @@ class ImperialTrainer(object):
 
         return substrings, limit
 
-    def _normal(self):
+    def normal(self):
+        q = 0
+        while True:
+            if q == -1:
+                return
+            elif q == 0:
+                quote = 'Set random quote here'
+                q = self._normal_logic(quote)
+            elif q == 1:
+                quote = 'Same quote as before'
+                q = self._normal_logic(quote)
+
+    def _normal_logic(self, quote):
         curses.curs_set(1)
         curses.echo()
         self.screen.clear()
         ### Implement random quote from database here
-        message = "Many rivers to cross but I can't seem to find my way over. Wandering, I am lost as I travel along the white cliffs of Dover. Many rivers to cross and it's only my will that keeps me alive. I've been licked, washed up for years, and I merely survive because of my pride."
+        #quote = "Many rivers to cross but I can't seem to find my way over. Wandering, I am lost as I travel along the white cliffs of Dover. Many rivers to cross and it's only my will that keeps me alive. I've been licked, washed up for years, and I merely survive because of my pride."
 
         partsIndex = 0
         currentChar = 0
@@ -99,7 +126,7 @@ class ImperialTrainer(object):
         lastPart = 0
         escaped = False
 
-        substrings, limit = self._split_quote(message)
+        substrings, limit = self._split_quote(quote)
 
         # x holds our current position
         # startX holds the position where we want to return to after a new
@@ -108,7 +135,10 @@ class ImperialTrainer(object):
         x = 2 if self.x == 80 else (self.x - limit) / 2
 
         substring = substrings[partsIndex] + ' '
-        nextWord = substrings[partsIndex + 1].split(' ', 1)[0]
+        if len(substrings) > 1:
+            nextWord = substrings[partsIndex + 1].split(' ', 1)[0]
+        else:
+            nextWord = ''
         self.screen.addstr(self.y / 2, startX, substring + nextWord)
         self.screen.move(self.y / 2 + 1, startX)
         self.screen.refresh()
@@ -167,9 +197,9 @@ class ImperialTrainer(object):
             elif q == curses.KEY_RESIZE:
                 ### Do shit here
                 # If the size is too small, return to the menu which will show
-                # the 'RESIZE!' message
+                # the 'RESIZE!' quote
                 self.y, self.x = self.screen.getmaxyx()
-                return
+                return self._exit_game()
             else:
                 self.screen.addch(self.y / 2, x, q, curses.color_pair(0))
                 if q != ord(substring[currentChar]): # Mistake happened
@@ -186,24 +216,58 @@ class ImperialTrainer(object):
                 x += 1
                 currentChar += 1
 
-        self.screen.clear()
-        curses.noecho()
         if not escaped:
-            elapsed = time.time() - now
-            wpm = len(message) / float(elapsed) * 12
-            accuracy = float(mistakes) / len(message) * 100
-            a = 'Your WPM is %5.2f' % wpm
-            b = 'Your accuracy is %{0:4.2f}'.format(100 - accuracy)
-            self.screen.addstr(self.y / 2, (self.x - len(a)) / 2, a)
-            self.screen.addstr(self.y / 2 + 1, (self.x - len(b)) / 2, b)
-            self.screen.clear()
-            curses.curs_set(0)
-            self._paint_menu()
+            accuracy = self._show_result_screen(quote, now, mistakes)
+            while True:
+                a = self.screen.getch()
+                if a == 27 or a == ord('x') or a == ord('X'):
+                    return self._exit_game()
+                elif a == ord('n') or a == ord('N'):
+                    if self.brutal and accuracy > 2:
+                        return 1
+                    else:
+                        return 0
+                elif a == ord('s') or a == ord('S'):
+                    if self.brutal and accuracy > 2:
+                        continue
+                    else:
+                        return 1
+
         else:
-            curses.curs_set(0)
-            self._paint_menu()
+            return self._exit_game()
 
+    def _exit_game(self):
+        self.screen.addstr(3, 3, 'asdfasdf')
+        curses.curs_set(0)
+        curses.noecho()
+        self.screen.clear()
+        self._paint_menu()
+        return -1
 
+    def _show_result_screen(self, quote, start_time, mistakes):
+        """
+        Display the results of the current game
+        """
+
+        self.screen.clear()
+        curses.curs_set(0)
+        curses.noecho()
+
+        elapsed = time.time() - start_time
+        wpm = len(quote) / float(elapsed) * 12
+        accuracy = float(mistakes) / len(quote) * 100
+        a = 'Your WPM  is %5.2f' % wpm
+        b = 'Your accuracy is %{0:4.2f}'.format(100 - accuracy)
+        if self.brutal and accuracy > 2:
+            c = '(N)ew Game        E(x)it to Menu'
+        else:
+            c = '(N)ew Game        (S)ame Quote       E(x)it to Menu'
+        self.screen.addstr(self.y / 2, (self.x - len(a)) / 2, a)
+        self.screen.addstr(self.y / 2 + 1, (self.x - len(b)) / 2, b)
+        self.screen.addstr(self.y / 2 + 4, (self.x - len(c)) / 2, c)
+        self._paint_modes()
+
+        return accuracy
 
 def entry(screen):
     curses.init_pair(1, curses.COLOR_RED, curses.COLOR_BLACK)
