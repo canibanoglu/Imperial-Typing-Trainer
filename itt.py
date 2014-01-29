@@ -1,7 +1,8 @@
 import curses
 import time
-import signal
-import subprocess
+import json
+import random
+from unidecode import unidecode
 
 class ImperialTrainer(object):
     def __init__(self, screen):
@@ -13,6 +14,14 @@ class ImperialTrainer(object):
             curses.curs_set(0)
         except:
             pass
+        try:
+            with open('data.json') as f:
+                self.quotes = json.load(f)
+        except IOError:
+            curses.endwin()
+            print 'No data file found, please recheck that you have .data.json\
+                    in the folder.'
+            exit()
 
     def _paint_menu(self):
         lines = ['Welcome to Imperial Typing Trainer',
@@ -56,7 +65,7 @@ class ImperialTrainer(object):
     def main(self):
         self._paint_menu()
         q = 0
-        while q != 27:
+        while True:
             if self.x < 10 or self.y < 10:
                 return
             elif self.x < 80 or self.y < 24:
@@ -81,6 +90,10 @@ class ImperialTrainer(object):
                 self._toggle_mode(0)
             elif q == ord('m') or q == ord('M'):
                 self._toggle_mode(1)
+            elif q == 27:
+                with open('data.json', 'w') as f:
+                    json.dump(self.quotes, f, indent=4)
+                exit()
 
     def _split_quote(self, quote):
         length = 0
@@ -106,18 +119,16 @@ class ImperialTrainer(object):
             if q == -1:
                 return
             elif q == 0:
-                quote = 'Set random quote here'
-                q = self._normal_logic(quote)
+                r = random.randint(0, len(self.quotes) - 1)
+                quote = unidecode(self.quotes[r][0])
+                q = self._normal_logic(quote, r)
             elif q == 1:
-                quote = 'Same quote as before'
-                q = self._normal_logic(quote)
+                q = self._normal_logic(quote, r)
 
-    def _normal_logic(self, quote):
+    def _normal_logic(self, quote, quote_id):
         curses.curs_set(1)
         curses.echo()
         self.screen.clear()
-        ### Implement random quote from database here
-        #quote = "Many rivers to cross but I can't seem to find my way over. Wandering, I am lost as I travel along the white cliffs of Dover. Many rivers to cross and it's only my will that keeps me alive. I've been licked, washed up for years, and I merely survive because of my pride."
 
         partsIndex = 0
         currentChar = 0
@@ -217,7 +228,7 @@ class ImperialTrainer(object):
                 currentChar += 1
 
         if not escaped:
-            accuracy = self._show_result_screen(quote, now, mistakes)
+            accuracy = self._show_result_screen(quote, now, mistakes, quote_id)
             while True:
                 a = self.screen.getch()
                 if a == 27 or a == ord('x') or a == ord('X'):
@@ -232,19 +243,21 @@ class ImperialTrainer(object):
                         continue
                     else:
                         return 1
+                elif a == curses.KEY_RESIZE:
+                    self.y, self.x = self.screen.getmaxyx()
+                    return self._exit_game()
 
         else:
             return self._exit_game()
 
     def _exit_game(self):
-        self.screen.addstr(3, 3, 'asdfasdf')
         curses.curs_set(0)
         curses.noecho()
         self.screen.clear()
         self._paint_menu()
         return -1
 
-    def _show_result_screen(self, quote, start_time, mistakes):
+    def _show_result_screen(self, quote, start_time, mistakes, quote_id):
         """
         Display the results of the current game
         """
@@ -256,6 +269,8 @@ class ImperialTrainer(object):
         elapsed = time.time() - start_time
         wpm = len(quote) / float(elapsed) * 12
         accuracy = float(mistakes) / len(quote) * 100
+        if not (wpm > 130 and accuracy > 40):
+            self._save_current_game_results(quote_id, wpm, accuracy)
         a = 'Your WPM  is %5.2f' % wpm
         b = 'Your accuracy is %{0:4.2f}'.format(100 - accuracy)
         if self.brutal and accuracy > 2:
@@ -268,6 +283,11 @@ class ImperialTrainer(object):
         self._paint_modes()
 
         return accuracy
+
+    def _save_current_game_results(self, quote_id, wpm, accuracy):
+        self.quotes[quote_id][1]['past_acc'].append(accuracy)
+        self.quotes[quote_id][1]['past_wpm'].append(wpm)
+
 
 def entry(screen):
     curses.init_pair(1, curses.COLOR_RED, curses.COLOR_BLACK)
