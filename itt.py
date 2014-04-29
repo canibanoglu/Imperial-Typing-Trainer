@@ -2,6 +2,7 @@ import curses
 import time
 import json
 import random
+import threading
 from unidecode import unidecode
 
 class ImperialTrainer(object):
@@ -10,6 +11,7 @@ class ImperialTrainer(object):
         self.y, self.x = self.screen.getmaxyx()
         self.brutal = 0
         self.mostcommon = 0
+        self.force_game_end = None
         try:
             curses.curs_set(0)
         except:
@@ -86,6 +88,8 @@ class ImperialTrainer(object):
                     self._paint_menu()
             elif q == ord('1'):
                 self.normal()
+            elif q == ord('2'):
+                self.force()
             elif q == ord('b') or q == ord('B'):
                 self._toggle_mode(0)
             elif q == ord('m') or q == ord('M'):
@@ -190,30 +194,14 @@ class ImperialTrainer(object):
                 escaped = True
                 break
             elif q == 127 or q == 263: # User is trying to delete character
-                if x == startX:
-                    self.screen.addch(self.y / 2 + 1, x - 1, ord(' '))
-                    self.screen.addch(self.y / 2 + 1, x, ord(' '))
-                    self.screen.addch(self.y / 2 + 1, x + 1, ord(' '))
-                    self.screen.move(self.y / 2 + 1, x)
-                    continue
-                self.screen.addch(self.y / 2 + 1, x - 1, ord(' '))
-                self.screen.addch(self.y / 2 + 1, x, ord(' ' ))
-                self.screen.addch(self.y / 2 + 1, x + 1, ord(' '))
-                self.screen.addch(self.y / 2, startX + currentChar - 1, 
-                        substring[currentChar - 1], curses.color_pair(0))
-                self.screen.move(self.y / 2 + 1, x - 1)
-                self.screen.refresh()
-                currentChar -= 1
-                x -= 1
+                currentChar, x = self._delete(x, startX, substring, currentChar)
+                
             elif q == curses.KEY_RESIZE:
-                ### Do shit here
-                # If the size is too small, return to the menu which will show
-                # the 'RESIZE!' quote
-                self.y, self.x = self.screen.getmaxyx()
-                return self._exit_game()
+                return _resize_handler()
             else:
                 self.screen.addch(self.y / 2, x, q, curses.color_pair(0))
                 if q != ord(substring[currentChar]): # Mistake happened
+                    curses.beep()
                     color = (substring[currentChar] == ' ' and 3) or 1
                     self.screen.addch(self.y / 2, startX + currentChar,
                             substring[currentChar], curses.color_pair(color))
@@ -250,6 +238,149 @@ class ImperialTrainer(object):
         else:
             return self._exit_game()
 
+    def force(self):
+        q = 0
+        while True:
+            if q == -1:
+                return
+            elif q == 0:
+                r = random.randint(0, len(self.quotes) - 1)
+                quote = unidecode(self.quotes[r][0])
+                q = self._force_logic(quote, r)
+            elif q == 1:
+                q = self._force_logic(quote, r)
+
+    def _force_logic(self, quote, quote_id, wpm=60):
+        curses.curs_set(0)
+        curses.noecho()
+        self.screen.nodelay(1)
+        self.screen.clear()
+        self.force_game_end = False
+
+        partsIndex = 0
+        currentChar = 0
+        userCurrentChar = 0
+        userX = 0
+        started = 0
+        mistakes = 0
+        lastPart = 0
+
+        quote_thread = threading.Thread(target=self._force_thread, args=(quote,))
+        quote_thread.daemon = True
+
+        substrings, limit = self._split_quote(quote)
+
+        startX = 2 if self.x == 80 else (self.x - limit) / 2
+        x = 2 if self.x == 80 else (self.x - limit) / 2
+        userX = startX
+
+        substring = substrings[partsIndex] + ' '
+        if len(substrings) > 1:
+            nextWord = substrings[partsIndex + 1].split(' ', 1)[0]
+        else:
+            nextWord = ''
+        self.screen.addstr(self.y / 2, startX, substring + nextWord)
+        self.screen.move(self.y / 2 + 1, startX)
+
+        q = -1
+        typedChars = 0
+
+        while True:
+            if self.force_game_end or typedChars == len(quote):
+                break
+            q = self.screen.getch()
+
+            if q != -1 and not started:
+                started = 1
+                end = quote_thread.start()
+                now = time.time()
+
+            if q == 27:
+                self.force_game_end = True
+                break
+            elif q == 127 or q == 263:
+                if x == startX:
+                    self.screen.addch(self.y / 2 + 1, x - 1, ord(' '))
+                    self.screen.addch(self.y / 2 + 1, x, ord(' '))
+                    self.screen.addch(self.y / 2 + 1, x + 1, ord(' '))
+                    self.screen.move(self.y / 2 + 1, x)
+                    continue
+                self.screen.addch(self.y / 2 + 1, x - 1, ord(' '))
+                self.screen.addch(self.y / 2 + 1, x, ord(' ' ))
+                self.screen.addch(self.y / 2 + 1, x + 1, ord(' '))
+                self.screen.move(self.y / 2 + 1, x - 1)
+                self.screen.refresh()
+                typedChars -= 1
+                userCurrentChar -= 1
+                userX -= 1
+            elif q == curses.KEY_RESIZE:
+                self.y, self.x = self.screen.getmaxyx()
+                return self._exit_game()
+            elif q != -1:
+                self.screen.move(self.y / 2 + 1, userX)
+                self.screen.addch(self.y / 2 + 1, userX, q)
+                typedChars += 1
+                userX += 1
+                userCurrentChar += 1
+
+        accuracy = self._show_result_screen(quote, now, 0, quote_id)
+        while True:
+            a = self.screen.getch()
+            if a == 27 or a == ord('x') or a == ord('X'):
+                return self._exit_game()
+            elif a == ord('n') or a == ord('N'):
+                return 0
+            elif a == ord('s') or a == ord('S'):
+                return 1
+            elif a == curses.KEY_RESIZE:
+                self.y, self.x = self.screen.getmaxyx()
+                return self._exit_game()
+
+    def _force_thread(self, quote):
+        partsIndex = 0
+        currentChar = 0
+        lastPart = 0
+
+        substrings, limit = self._split_quote(quote)
+
+        startX = 2 if self.x == 80 else (self.x - limit) / 2
+        x = startX
+
+        substring = substrings[partsIndex] + ' '
+
+        if len(substrings) > 1:
+            nextWord = substrings[partsIndex + 1].split(' ', 1)[0]
+        else:
+            nextWord = ''
+
+        #self.screen.addstr(self.y / 2, startX, substring + nextWord)
+        #self.screen.move(self.y / 2 + 1, startX)
+
+        while not self.force_game_end:
+            if partsIndex + 1 == len(substrings):
+                lastPart = 1
+            if lastPart and currentChar == len(substring):
+                self.force_game_end = True
+                return
+            elif currentChar == len(substring):
+                partsIndex += 1
+                substring = substrings[partsIndex] + ' '
+                if partsIndex + 1 == len(substrings):
+                    nextWord = ''
+                    substring = substring[:-1]
+                else:
+                    nextWord = substrings[partsIndex + 1].split(' ', 1)[0]
+                self.screen.addstr(self.y / 2, startX, ' ' * (self.x - startX - 1))
+                self.screen.addstr(self.y / 2 + 1, startX, ' ' * (self.x - startX -1))
+                self.screen.addstr(self.y / 2, startX, substring + nextWord)
+                x = startX
+                currentChar = 0
+
+            time.sleep(12.0 / 100)
+            self.screen.addch(self.y / 2, startX + currentChar, ' ')
+            self.screen.refresh()
+            currentChar += 1
+
     def _exit_game(self):
         curses.curs_set(0)
         curses.noecho()
@@ -269,7 +400,7 @@ class ImperialTrainer(object):
         elapsed = time.time() - start_time
         wpm = len(quote) / float(elapsed) * 12
         accuracy = float(mistakes) / len(quote) * 100
-        if not (wpm > 130 and accuracy > 40):
+        if not (accuracy > 40):
             self._save_current_game_results(quote_id, wpm, accuracy)
         a = 'Your WPM  is %5.2f' % wpm
         b = 'Your accuracy is %{0:4.2f}'.format(100 - accuracy)
@@ -287,6 +418,32 @@ class ImperialTrainer(object):
     def _save_current_game_results(self, quote_id, wpm, accuracy):
         self.quotes[quote_id][1]['past_acc'].append(accuracy)
         self.quotes[quote_id][1]['past_wpm'].append(wpm)
+
+    def _resize_handler(self):
+        """Updates the screen size instance variables and exits the current
+        game and returns to the main menu."""
+        self.y, self.x = self.screen.getmaxyx()
+        return self._exit_game()
+
+    def _delete(self, currentX, startPosition, substring, currentChar):
+        """Handles the deleting of characters when the user deletes a character
+        with the backspace key"""
+
+        if currentX == startPosition:
+            self._delete_characters(currentX)
+            self.screen.move(self.y / 2 + 1, currentX)
+            return
+        self._delete_characters(currentX)
+        self.screen.addch(self.y / 2, startPosition + currentChar - 1,
+                substring[currentChar - 1], curses.color_pair(0))
+        self.screen.move(self.y / 2 + 1, currentX - 1)
+        self.screen.refresh()
+        return currentChar - 1, currentX - 1
+
+    def _delete_characters(self, currentX):
+        self.screen.addch(self.y / 2 + 1, currentX - 1, ord(' '))
+        self.screen.addch(self.y / 2 + 1, currentX, ord(' '))
+        self.screen.addch(self.y / 2 + 1, currentX + 1, ord(' '))
 
 
 def entry(screen):
